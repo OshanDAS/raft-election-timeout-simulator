@@ -3,179 +3,253 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>[Project Title]: Interactive Demo</title>
-<!--
-  STARTER TEMPLATE. The example simulation below is a Monte Carlo estimate of pi.
-  It is here only to show the required structure:
-    - at least three adjustable parameters
-    - Start / Pause / Reset
-    - a live visualisation
-    - at least one quantitative output, checked against a reference value
-    - an "About / How to use" panel
-  Replace the SIMULATION section and the controls with your own model.
--->
-<style>
-  :root { --ink:#1b2430; --muted:#5d6876; --line:#d8dee6; --accent:#1f6f8b; --bg:#f6f8fa; --ok:#1a7f37; --warn:#b35900; }
-  * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:var(--bg); }
-  header { padding:16px 20px; background:#fff; border-bottom:1px solid var(--line); }
-  header h1 { margin:0; font-size:1.3rem; }
-  header p { margin:4px 0 0; color:var(--muted); font-size:.95rem; }
-  main { display:grid; grid-template-columns: 300px 1fr; gap:16px; padding:16px 20px; max-width:1200px; margin:0 auto; }
-  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
-  .panel { background:#fff; border:1px solid var(--line); border-radius:8px; padding:14px; }
-  label { display:block; font-size:.9rem; margin:12px 0 4px; }
-  label span { float:right; font-variant-numeric: tabular-nums; color:var(--muted); }
-  input[type=range] { width:100%; }
-  input[type=number] { width:100%; padding:6px; border:1px solid var(--line); border-radius:4px; }
-  .buttons { display:flex; gap:8px; margin-top:16px; }
-  button { flex:1; padding:8px; border:1px solid var(--accent); background:var(--accent); color:#fff; border-radius:6px; font-size:.95rem; cursor:pointer; }
-  button.secondary { background:#fff; color:var(--accent); }
-  canvas { width:100%; max-width:560px; aspect-ratio:1; display:block; margin:0 auto; background:#fff; border:1px solid var(--line); }
-  .stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:10px; margin-top:14px; }
-  .stat { border:1px solid var(--line); border-radius:6px; padding:10px; }
-  .stat .k { font-size:.8rem; color:var(--muted); }
-  .stat .v { font-size:1.2rem; font-variant-numeric: tabular-nums; }
-  .check.ok { color:var(--ok); } .check.warn { color:var(--warn); }
-  details { margin-top:16px; }
-  summary { cursor:pointer; font-weight:600; }
-  details p, details li { font-size:.92rem; line-height:1.45; }
-</style>
+<title>When to Replace a Slow Leader: Raft Election-Timeout Simulator</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
+
 <header>
-  <h1>[Project Title]</h1>
-  <p>[One-sentence description of what the simulation shows.]</p>
+  <div>
+    <h1>When to Replace a Slow Leader</h1>
+    <p>Election-timeout trade-offs in a five-node Raft-style cluster: a discrete-event simulation that runs in your browser.</p>
+  </div>
+  <button id="aboutToggle" class="secondary" aria-expanded="true" aria-controls="about">About / How to use</button>
 </header>
 
 <main>
-  <section class="panel" aria-label="Controls">
-    <!-- REPLACE: your own parameters (at least three) -->
-    <label for="nTotal">Total samples <span id="nTotalVal"></span></label>
-    <input id="nTotal" type="range" min="1000" max="200000" step="1000" value="50000">
+  <!-- ===================== SETTINGS (shared by both tabs) ===================== -->
+  <aside class="panel controls">
+    <h2>Settings</h2>
+    <p class="hint top">Used by both tabs. Changing a setting restarts the live run.</p>
 
-    <label for="speed">Samples per frame (speed) <span id="speedVal"></span></label>
-    <input id="speed" type="range" min="10" max="5000" step="10" value="200">
+    <label for="T">Election timeout T (ms) <span id="TVal">200</span></label>
+    <input type="range" id="T" min="100" max="3000" step="50" value="200">
+    <p class="help">How long a follower waits for a heartbeat before it starts an election.</p>
 
-    <label for="seed">Random seed</label>
-    <input id="seed" type="number" value="42" min="1" step="1">
+    <label for="m">Mean network jitter m (ms) <span id="mVal">20</span></label>
+    <input type="range" id="m" min="0" max="100" step="1" value="20">
+    <p class="help">Average random delay the network adds to each message.</p>
 
-    <div class="buttons">
-      <button id="startBtn">Start</button>
-      <button id="resetBtn" class="secondary">Reset</button>
+    <label for="s">Slow-node extra delay s (ms) <span id="sVal">300</span></label>
+    <input type="range" id="s" min="0" max="2400" step="50" value="300">
+    <p class="help">How much later a slow node is, on average.</p>
+
+    <details id="more" class="more">
+      <summary>More settings</summary>
+      <label for="dist">Network jitter distribution</label>
+      <select id="dist">
+        <option value="exponential" selected>Exponential</option>
+        <option value="lognormal">Lognormal (σ = 1)</option>
+        <option value="pareto">Pareto (α = 2.5, heavy tail)</option>
+        <option value="constant">None (constant delay)</option>
+      </select>
+      <label for="mode">How a slow node is slow</label>
+      <select id="mode">
+        <option value="late messages" selected>Late messages (each message delayed)</option>
+        <option value="late heartbeats">Late heartbeats (leader stalls before sending)</option>
+      </select>
+      <label for="w">Slow-leader weight w <span id="wVal">0.50</span></label>
+      <input type="range" id="w" min="0" max="1" step="0.05" value="0.5">
+      <label for="n">Cluster size</label>
+      <select id="n">
+        <option value="5" selected>5 nodes (majority 3)</option>
+        <option value="3">3 nodes (majority 2)</option>
+      </select>
+      <label class="check"><input type="checkbox" id="chain" checked> Random node health (Markov chain)</label>
+      <label for="runLen">Run length (simulated minutes) <span id="runLenVal">10</span></label>
+      <input type="range" id="runLen" min="1" max="10" step="1" value="10">
+      <label for="seed">Random seed</label>
+      <input type="number" id="seed" min="0" max="99999" step="1" value="0">
+    </details>
+  </aside>
+
+  <section class="content">
+    <!-- ===================== ABOUT ===================== -->
+    <div id="about" class="panel about">
+      <h2>About this demo</h2>
+      <p>A cluster of servers keeps data consistent by electing one <b>leader</b>. The leader sends a <b>heartbeat</b> to every follower every 100 ms. Each follower runs a countdown, the <b>election timeout</b>, drawn at random between T and 2T. If no heartbeat arrives before the countdown ends, the follower starts an <b>election</b>. While there is no working leader, the service is down.</p>
+      <p>A short timeout replaces a failed or slow leader quickly, but late heartbeats caused by network <b>jitter</b> trigger unnecessary elections. A long timeout avoids false alarms but makes real outages longer and lets slow leaders stay in charge. This page runs the same model as the notebook, so you can find the timeout that gives the least downtime.</p>
+      <div class="cols">
+        <div>
+          <h3>How to use</h3>
+          <ol>
+            <li>Press <b>Start</b> to watch one run. Use <b>Speed</b> to go faster, and <b>Pause</b> to stop and look.</li>
+            <li>Move a slider (for example the timeout T or the jitter m). The run restarts with the new setting.</li>
+            <li>Click a node to make it slow or failed and watch the others react.</li>
+            <li>Under <b>Check against the notebook</b>, press <b>Run replications</b> for an average with a 95% confidence interval, or <b>Reproduce notebook row</b> to repeat a whole row of the notebook's main sweep.</li>
+            <li><b>Reset</b> clears the run and starts again from time 0.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Reading the picture</h3>
+          <ul class="legend-list">
+            <li><span class="sw leader"></span> Leader, <span class="sw candidate"></span> candidate, <span class="sw follower"></span> follower</li>
+            <li>Ring colour = health: <span class="sw ring-h"></span> healthy, <span class="sw ring-s"></span> slow, <span class="sw ring-f"></span> failed</li>
+            <li>Thin grey arc = time left on a follower's election timer</li>
+            <li>Moving dots = messages: <span class="dot hb"></span> heartbeat, <span class="dot vr"></span> vote request, <span class="dot vy"></span> vote reply</li>
+            <li>Bottom strip of the chart: <span class="sw st-h"></span> healthy leader, <span class="sw st-s"></span> slow leader, <span class="sw st-n"></span> no working leader</li>
+          </ul>
+        </div>
+      </div>
+      <h3>Downtime</h3>
+      <p><b>Weighted downtime</b> = time with no working leader + w × time with a slow leader, shown as a % of the simulated time. With w = 0 a slow leader costs nothing; with w = 1 it counts like no leader.</p>
+      <h3>Reference result and tolerance</h3>
+      <p>Press <b>Load notebook reference setting</b> (late messages, exponential jitter m = 20 ms, T = 200 ms, s = 300 ms, w = 0.5, 5 nodes), then <b>Run replications</b> with 30 runs of 10 minutes and seed 0. The demo gives <b>0.40 ± 0.11 %</b> downtime. The notebook (section 6.3) gives <b>0.43 ± 0.20 %</b>. The check <b>passes</b> when the two means cannot be told apart by a 95% Welch interval, the same test the notebook uses. The page uses a different random-number generator from NumPy, so the numbers are close but not identical. That is why a tolerance is needed.</p>
+      <h3>Limitations</h3>
+      <ul>
+        <li>Timing only: no log replication, no message loss and no network partitions, as in the notebook.</li>
+        <li>The health transition matrix, s and w are illustrative values, not measurements from a real cluster.</li>
+        <li>Notebook reference values exist only for the main-sweep settings (T = 150 to 3000 ms, m = 5, 20 or 50 ms, s = 300 ms, w = 0.5, 5 nodes, 10-minute runs).</li>
+      </ul>
     </div>
 
-    <details>
-      <summary>About / How to use</summary>
-      <!-- REPLACE: explain your model, its parameters and how to read the outputs -->
-      <p>This example estimates &pi; by sampling random points in a unit square and counting the fraction that falls inside the quarter circle: &pi; &asymp; 4 &times; (inside / total).</p>
-      <ul>
-        <li>Set the parameters, then press <b>Start</b>. <b>Pause</b> stops the run; <b>Reset</b> clears it and applies new settings.</li>
-        <li>The estimate is shown with a 95% confidence interval. The error should shrink roughly as 1/&radic;N.</li>
-        <li>The check compares the estimate with the reference value; the notebook gives the same result for the default settings.</li>
-      </ul>
-    </details>
-  </section>
+    <!-- ===================== TABS ===================== -->
+    <div class="tabs" role="tablist">
+      <button class="tab active" role="tab" id="tabWatch" data-tab="watch" aria-selected="true" aria-controls="paneWatch">Watch a run</button>
+      <button class="tab" role="tab" id="tabCheck" data-tab="check" aria-selected="false" aria-controls="paneCheck">Check against the notebook</button>
+    </div>
 
-  <section class="panel" aria-label="Simulation">
-    <canvas id="view" width="560" height="560" aria-label="Live visualisation"></canvas>
-    <div class="stats">
-      <div class="stat"><div class="k">Samples so far</div><div class="v" id="outN">0</div></div>
-      <div class="stat"><div class="k">Estimate &plusmn; 95% CI</div><div class="v" id="outEst">–</div></div>
-      <div class="stat"><div class="k">Reference value</div><div class="v" id="outRef">3.14159</div></div>
-      <div class="stat"><div class="k">Check</div><div class="v check" id="outCheck">–</div></div>
+    <!-- ===================== TAB 1: WATCH A RUN ===================== -->
+    <div id="paneWatch" class="pane" role="tabpanel" aria-labelledby="tabWatch">
+      <div class="panel">
+        <div class="runbar">
+          <button id="startBtn" class="primary">Start</button>
+          <button id="resetBtn">Reset</button>
+          <label class="inline speed" for="speed">Speed <input type="range" id="speed" min="0" max="100" value="44"> <span id="speedVal">×2</span></label>
+          <span id="status" class="chip">Ready</span>
+        </div>
+        <div class="live">
+          <div>
+            <div class="canvas-wrap"><canvas id="clusterCanvas" aria-label="Cluster picture"></canvas>
+              <div id="msgHint" class="overlay-hint" hidden>Messages hidden above ×20 speed</div>
+            </div>
+            <div class="legend">
+              <span><i class="sw leader"></i>leader</span>
+              <span><i class="sw candidate"></i>candidate</span>
+              <span><i class="sw follower"></i>follower</span>
+              <span class="gap"><i class="ring ring-h"></i>healthy</span>
+              <span><i class="ring ring-s"></i>slow</span>
+              <span><i class="ring ring-f"></i>failed</span>
+              <span class="gap"><i class="dot hb"></i>heartbeat</span>
+              <span><i class="dot vr"></i>vote request</span>
+              <span><i class="dot vy"></i>vote reply</span>
+              <span class="gap"><i class="arc"></i>time left on election timer</span>
+            </div>
+            <p class="hint">Click a node to change its health: healthy → slow → failed → healthy.</p>
+          </div>
+
+          <div class="stats">
+            <div class="big">
+              <div class="label">Weighted downtime in this run <span class="info" tabindex="0" data-tip="Time with no working leader + w × time with a slow leader, as a % of the simulated time so far.">ⓘ</span></div>
+              <div class="value" id="oDown">0.00 %</div>
+              <p class="note">This is one random run. Failures are rare, so one run can stay at 0 % and then jump. <button id="avgLink" class="linkish">See the 30-run average →</button></p>
+            </div>
+            <dl>
+              <dt>Simulated time <span class="info" tabindex="0" data-tip="How much simulated time has passed, out of the run length.">ⓘ</span></dt><dd id="oTime">0.0 s</dd>
+              <dt>Working leader <span class="info" tabindex="0" data-tip="The leader with the newest term. 'none' means there is no leader or it has failed.">ⓘ</span></dt><dd id="oLeader">–</dd>
+              <dt>Current term <span class="info" tabindex="0" data-tip="Election round number. It goes up by 1 every time an election starts.">ⓘ</span></dt><dd id="oTerm">1</dd>
+              <dt>Time with no working leader <span class="info" tabindex="0" data-tip="Total time the service was down: no leader, or the leader had failed.">ⓘ</span></dt><dd id="oNone">0.0 s</dd>
+              <dt>Time with a slow leader <span class="info" tabindex="0" data-tip="Total time the working leader was slow. Counts as downtime with weight w.">ⓘ</span></dt><dd id="oSlow">0.0 s</dd>
+            </dl>
+            <div class="cards3">
+              <div class="mini c-false">
+                <div class="mlabel">Unnecessary <span class="info" tabindex="0" data-tip="Elections started while a healthy leader was working. Usually caused by late heartbeats (jitter). Too many means the timeout is too short.">ⓘ</span></div>
+                <div class="mval" id="oFalse">0</div>
+              </div>
+              <div class="mini c-slow">
+                <div class="mlabel">Slow leader <span class="info" tabindex="0" data-tip="Elections started while the leader was slow: the cluster is replacing a slow leader.">ⓘ</span></div>
+                <div class="mval" id="oSlowEl">0</div>
+              </div>
+              <div class="mini c-needed">
+                <div class="mlabel">Needed <span class="info" tabindex="0" data-tip="Elections started while there was no working leader, for example after the leader failed.">ⓘ</span></div>
+                <div class="mval" id="oNeeded">0</div>
+              </div>
+            </div>
+            <div class="cards-caption">Elections started, by reason</div>
+            <div class="outline">Outages / mean length <span class="info" tabindex="0" data-tip="An outage is one unbroken period with no working leader. The mean length is the average recovery time.">ⓘ</span> <b id="oOut">0</b></div>
+          </div>
+        </div>
+        <h3>What just happened</h3>
+        <ol id="log" class="log" reversed></ol>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Downtime over time</h2>
+          <span class="muted small">line: weighted downtime % so far · strip: who is in charge</span>
+        </div>
+        <canvas id="chartCanvas" class="chart" aria-label="Downtime chart"></canvas>
+      </div>
+    </div>
+
+    <!-- ===================== TAB 2: CHECK AGAINST THE NOTEBOOK ===================== -->
+    <div id="paneCheck" class="pane" role="tabpanel" aria-labelledby="tabCheck" hidden>
+      <div class="panel intro">
+        <p>These checks run many complete runs quickly, without animation, using the settings on the left. Seeds start at the random seed under <b>More settings</b>.</p>
+        <label class="inline" for="reps">Replications per setting <input type="number" id="reps" min="2" max="100" value="30"></label>
+        <div class="progress" id="progressWrap" hidden><div id="progressBar"></div><span id="progressText"></span></div>
+      </div>
+
+      <div class="panel card">
+        <div class="card-head">
+          <span class="num">1</span>
+          <div>
+            <h2>Reference check</h2>
+            <p class="muted">Runs the replications with your current settings and reports the mean ± 95% confidence interval. If the settings match the notebook's main sweep, it also shows the notebook's values and says <b>PASS</b> or <b>FAIL</b>.</p>
+          </div>
+        </div>
+        <div class="row wrap">
+          <button id="refBtn" class="secondary">Load notebook reference setting</button>
+          <button id="repBtn" class="primary">Run replications</button>
+        </div>
+        <div id="outRep" class="out"></div>
+      </div>
+
+      <div class="panel card">
+        <div class="card-head">
+          <span class="num">2</span>
+          <div>
+            <h2>Whole notebook row</h2>
+            <p class="muted">Repeats one row of the notebook's main sweep (section 6.3): all 7 timeouts from 150 to 3000 ms. Shows the demo and notebook curves together and the best timeout of each.</p>
+          </div>
+        </div>
+        <div class="row wrap">
+          <label class="inline" for="rowSel">Row
+            <select id="rowSel">
+              <option value="late messages|5">late messages, m = 5 ms</option>
+              <option value="late messages|20" selected>late messages, m = 20 ms</option>
+              <option value="late messages|50">late messages, m = 50 ms</option>
+              <option value="late heartbeats|5">late heartbeats, m = 5 ms</option>
+              <option value="late heartbeats|20">late heartbeats, m = 20 ms</option>
+              <option value="late heartbeats|50">late heartbeats, m = 50 ms</option>
+            </select>
+          </label>
+          <button id="rowBtn" class="primary">Reproduce notebook row</button>
+        </div>
+        <div id="outRow" class="out"></div>
+        <canvas id="rowCanvas" class="chart" hidden aria-label="Notebook row comparison"></canvas>
+      </div>
+
+      <div class="panel card">
+        <div class="card-head">
+          <span class="num">3</span>
+          <div>
+            <h2>Verification checks</h2>
+            <p class="muted">Repeats 8 of the notebook's verification checks (section 5) on this page's JavaScript code, for example the zero-jitter limiting case and the false-suspicion formula.</p>
+          </div>
+        </div>
+        <div class="row wrap">
+          <button id="checkBtn" class="primary">Run verification checks</button>
+        </div>
+        <div id="outCheck" class="out"></div>
+      </div>
     </div>
   </section>
 </main>
 
-<script>
-// ---------- seeded random number generator (reproducible runs) ----------
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
+<footer>Simulation of when to replace a slow leader · Runs entirely in your browser: no server, no downloads.</footer>
 
-// ---------- SIMULATION (REPLACE with your own model) ----------
-const REFERENCE = Math.PI;          // analytic / notebook reference value
-const sim = { rng: null, n: 0, inside: 0, nTotal: 0 };
-
-function initSim(params) {
-  sim.rng = mulberry32(params.seed);
-  sim.n = 0; sim.inside = 0; sim.nTotal = params.nTotal;
-}
-
-function stepSim(k, draw) {                 // advance the model by k samples
-  for (let i = 0; i < k && sim.n < sim.nTotal; i++) {
-    const x = sim.rng(), y = sim.rng();
-    const hit = x * x + y * y <= 1;
-    sim.n++; if (hit) sim.inside++;
-    draw(x, y, hit);
-  }
-}
-
-function estimate() {                       // quantitative output with uncertainty
-  if (sim.n === 0) return null;
-  const p = sim.inside / sim.n;
-  const est = 4 * p;
-  const se = 4 * Math.sqrt(p * (1 - p) / sim.n);
-  return { est, ci: 1.96 * se };
-}
-
-// ---------- UI wiring (keep the pattern, adapt the details) ----------
-const $ = (id) => document.getElementById(id);
-const ctx = $("view").getContext("2d");
-let running = false, frame = null;
-
-function params() {
-  return { nTotal: +$("nTotal").value, speed: +$("speed").value, seed: Math.max(1, Math.floor(+$("seed").value) || 1) };
-}
-function showParams() {
-  $("nTotalVal").textContent = (+$("nTotal").value).toLocaleString();
-  $("speedVal").textContent = (+$("speed").value).toLocaleString();
-}
-function clearView() {
-  const w = ctx.canvas.width;
-  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, w);
-  ctx.strokeStyle = "#1b2430"; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(0, w, w, -Math.PI / 2, 0); ctx.stroke();
-}
-function drawPoint(x, y, hit) {
-  const w = ctx.canvas.width;
-  ctx.fillStyle = hit ? "rgba(31,111,139,0.55)" : "rgba(179,89,0,0.55)";
-  ctx.fillRect(x * w, (1 - y) * w, 1.5, 1.5);
-}
-function showOutputs() {
-  $("outN").textContent = sim.n.toLocaleString();
-  const e = estimate();
-  if (!e) { $("outEst").textContent = "–"; $("outCheck").textContent = "–"; $("outCheck").className = "v check"; return; }
-  $("outEst").textContent = `${e.est.toFixed(4)} ± ${e.ci.toFixed(4)}`;
-  const ok = Math.abs(e.est - REFERENCE) <= e.ci;
-  $("outCheck").textContent = ok ? "Within CI" : "Outside CI";
-  $("outCheck").className = "v check " + (ok ? "ok" : "warn");
-}
-function loop() {
-  stepSim(params().speed, drawPoint);
-  showOutputs();
-  if (sim.n >= sim.nTotal) { stop(); $("startBtn").textContent = "Done"; $("startBtn").disabled = true; return; }
-  frame = requestAnimationFrame(loop);
-}
-function start() { running = true; $("startBtn").textContent = "Pause"; frame = requestAnimationFrame(loop); }
-function stop() { running = false; if (frame) cancelAnimationFrame(frame); $("startBtn").textContent = "Start"; }
-function reset() {
-  stop(); initSim(params()); clearView(); showOutputs();
-  $("startBtn").disabled = false; $("startBtn").textContent = "Start";
-}
-
-$("startBtn").addEventListener("click", () => (running ? stop() : start()));
-$("resetBtn").addEventListener("click", reset);
-["nTotal", "speed"].forEach((id) => $(id).addEventListener("input", showParams));
-["nTotal", "seed"].forEach((id) => $(id).addEventListener("change", reset));
-$("outRef").textContent = REFERENCE.toFixed(5);
-showParams(); reset();
-</script>
+<script src="script.js"></script>
 </body>
 </html>
